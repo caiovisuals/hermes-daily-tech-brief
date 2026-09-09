@@ -1,0 +1,26 @@
+# Local deployment for the Hermes Daily Tech Brief agent.
+# Copied from plow-agents/compose.example.yml; see README.md for the full run.
+services:
+    agent:
+        build: .
+        environment:
+            # The id registered on the Agent Index. The hourly reporter stands down
+            # without it rather than guessing a name, so the agent still works and
+            # simply does not appear on the leaderboard.
+            AGENT_ID: hermes-daily-tech-brief
+        volumes:
+            # `.host`: the image copies it into place as root, so the file's host
+            # ownership does not matter. Written by `plow-agents mint ln_xxx`.
+            - ./plow-credentials:/var/lib/plow/credentials.host:ro
+            # The agent's home, kept across `up`/`down` so sessions, config and the
+            # brief archive survive. It also shadows the image, so an edit to
+            # SOUL.md or a skill is only picked up once it is gone:
+            # `docker compose down -v && docker compose up --build -d`.
+            - agent-home:/var/lib/hermes
+        # The agent checkpoints its session on SIGTERM and its supervisor allows
+        # 30s, so Docker's default 10s would cut it off and orphan the transcript.
+        stop_grace_period: 35s
+        # No ports: the agent connects to Plow outbound.
+
+volumes:
+    agent-home:

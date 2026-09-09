@@ -1,0 +1,13 @@
+# Build context is the repo root; only the agent's own content belongs in it.
+.git
+.env
+
+# `**/` is load-bearing: a bare `__pycache__` matches only the context root,
+# and the ones that matter are under each skill's scripts/ directory.
+**/__pycache__
+**/*.py[co]
+**/.pytest_cache
+
+# The live agent token `plow-agents mint` writes beside compose.yml. The build
+# context is this directory, so without this line it is reachable from a COPY.
+plow-credentials

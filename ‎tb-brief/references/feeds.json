@@ -1,0 +1,46 @@
+{
+  "$comment": "Curated feed catalog for Hermes Daily Tech Brief. tier 1 = primary source (vendor, project, or authority publishing about itself). tier 2 = reputable editorial newsroom. tier 3 = community aggregator or opinion. 'stack' lists the technology tags a feed is authoritative for; filter_news.py uses it together with references/stack-keywords.json to personalise ranking.",
+  "version": 1,
+  "feeds": [
+    { "id": "openai",        "name": "OpenAI News",              "url": "https://openai.com/news/rss.xml",                         "tier": 1, "topics": ["ai"],                 "stack": ["openai"] },
+    { "id": "anthropic",     "name": "Anthropic News",           "url": "https://www.anthropic.com/rss.xml",                       "tier": 1, "topics": ["ai"],                 "stack": ["anthropic", "claude"] },
+    { "id": "deepmind",      "name": "Google DeepMind Blog",     "url": "https://deepmind.google/blog/rss.xml",                    "tier": 1, "topics": ["ai"],                 "stack": ["gemini", "google"] },
+    { "id": "huggingface",   "name": "Hugging Face Blog",        "url": "https://huggingface.co/blog/feed.xml",                    "tier": 1, "topics": ["ai"],                 "stack": ["huggingface", "pytorch"] },
+    { "id": "arxiv-ai",      "name": "arXiv cs.AI",              "url": "http://export.arxiv.org/rss/cs.AI",                       "tier": 1, "topics": ["ai", "research"],     "stack": [] },
+    { "id": "arxiv-cl",      "name": "arXiv cs.CL",              "url": "http://export.arxiv.org/rss/cs.CL",                       "tier": 1, "topics": ["ai", "research"],     "stack": [] },
+
+    { "id": "github",        "name": "The GitHub Blog",          "url": "https://github.blog/feed/",                               "tier": 1, "topics": ["devtools"],           "stack": ["github", "git", "actions"] },
+    { "id": "cloudflare",    "name": "Cloudflare Blog",          "url": "https://blog.cloudflare.com/rss/",                        "tier": 1, "topics": ["cloud", "security"],  "stack": ["cloudflare", "workers"] },
+    { "id": "aws-new",       "name": "AWS What's New",           "url": "https://aws.amazon.com/about-aws/whats-new/recent/feed/", "tier": 1, "topics": ["cloud"],              "stack": ["aws"] },
+    { "id": "gcp",           "name": "Google Cloud Blog",        "url": "https://cloudblog.withgoogle.com/rss/",                   "tier": 1, "topics": ["cloud"],              "stack": ["gcp", "google"] },
+    { "id": "azure",         "name": "Microsoft Azure Blog",     "url": "https://azure.microsoft.com/en-us/blog/feed/",            "tier": 1, "topics": ["cloud"],              "stack": ["azure", "microsoft"] },
+    { "id": "kubernetes",    "name": "Kubernetes Blog",          "url": "https://kubernetes.io/feed.xml",                          "tier": 1, "topics": ["cloud", "devtools"],  "stack": ["kubernetes", "k8s"] },
+    { "id": "docker",        "name": "Docker Blog",              "url": "https://www.docker.com/blog/feed/",                       "tier": 1, "topics": ["devtools"],           "stack": ["docker", "containers"] },
+
+    { "id": "rust",          "name": "Rust Blog",                "url": "https://blog.rust-lang.org/feed.xml",                     "tier": 1, "topics": ["devtools"],           "stack": ["rust"] },
+    { "id": "go",            "name": "The Go Blog",              "url": "https://go.dev/blog/feed.atom",                           "tier": 1, "topics": ["devtools"],           "stack": ["go", "golang"] },
+    { "id": "python",        "name": "Python Insider",           "url": "https://pythoninsider.blogspot.com/feeds/posts/default?alt=rss", "tier": 1, "topics": ["devtools"],    "stack": ["python"] },
+    { "id": "nodejs",        "name": "Node.js Blog",             "url": "https://nodejs.org/en/feed/blog.xml",                      "tier": 1, "topics": ["devtools"],           "stack": ["node", "nodejs", "javascript"] },
+    { "id": "react",         "name": "React Blog",               "url": "https://react.dev/rss.xml",                               "tier": 1, "topics": ["devtools"],           "stack": ["react"] },
+    { "id": "nextjs",        "name": "Next.js Blog",             "url": "https://nextjs.org/feed.xml",                             "tier": 1, "topics": ["devtools"],           "stack": ["nextjs", "react", "vercel"] },
+    { "id": "deno",          "name": "Deno Blog",                "url": "https://deno.com/feed",                                   "tier": 1, "topics": ["devtools"],           "stack": ["deno", "typescript"] },
+    { "id": "postgres",      "name": "PostgreSQL News",          "url": "https://www.postgresql.org/news.rss",                     "tier": 1, "topics": ["devtools"],           "stack": ["postgres", "postgresql"] },
+
+    { "id": "cisa",          "name": "CISA Advisories",          "url": "https://www.cisa.gov/cybersecurity-advisories/all.xml",   "tier": 1, "topics": ["security"],           "stack": [] },
+    { "id": "krebs",         "name": "Krebs on Security",        "url": "https://krebsonsecurity.com/feed/",                       "tier": 2, "topics": ["security"],           "stack": [] },
+    { "id": "bleeping",      "name": "BleepingComputer",         "url": "https://www.bleepingcomputer.com/feed/",                  "tier": 2, "topics": ["security"],           "stack": [] },
+    { "id": "thehackernews", "name": "The Hacker News",          "url": "https://feeds.feedburner.com/TheHackersNews",             "tier": 2, "topics": ["security"],           "stack": [] },
+
+    { "id": "arstechnica",   "name": "Ars Technica",             "url": "https://feeds.arstechnica.com/arstechnica/index",         "tier": 2, "topics": ["tech", "ai"],         "stack": [] },
+    { "id": "theverge",      "name": "The Verge",                "url": "https://www.theverge.com/rss/index.xml",                  "tier": 2, "topics": ["tech"],               "stack": [] },
+    { "id": "techcrunch",    "name": "TechCrunch",               "url": "https://techcrunch.com/feed/",                            "tier": 2, "topics": ["tech", "startups"],   "stack": [] },
+    { "id": "theregister",   "name": "The Register",             "url": "https://www.theregister.com/headlines.atom",              "tier": 2, "topics": ["tech", "cloud"],      "stack": [] },
+    { "id": "infoq",         "name": "InfoQ",                    "url": "https://feed.infoq.com/",                                 "tier": 2, "topics": ["devtools"],           "stack": [] },
+    { "id": "techreview",    "name": "MIT Technology Review",    "url": "https://www.technologyreview.com/feed/",                  "tier": 2, "topics": ["ai", "tech"],         "stack": [] },
+
+    { "id": "hn",            "name": "Hacker News Front Page",   "url": "https://hnrss.org/frontpage?points=150",                  "tier": 3, "topics": ["tech", "devtools"],   "stack": [] },
+    { "id": "simonwillison", "name": "Simon Willison's Weblog",  "url": "https://simonwillison.net/atom/everything/",              "tier": 3, "topics": ["ai", "devtools"],     "stack": ["python", "llm"] },
+    { "id": "latentspace",   "name": "Latent Space",             "url": "https://www.latent.space/feed",                           "tier": 3, "topics": ["ai"],                 "stack": [] },
+    { "id": "importai",      "name": "Import AI",                "url": "https://importai.substack.com/feed",                      "tier": 3, "topics": ["ai", "research"],     "stack": [] }
+  ]
+}
