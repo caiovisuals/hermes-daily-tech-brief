@@ -11,6 +11,8 @@ briefs a day. These tests pin it.
 from __future__ import annotations
 
 import json
+import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -128,11 +130,36 @@ def test_config_validation() -> None:
             check(write_config.main() == 2, f"rejects {label}")
 
 
+def test_bare_path_invocations_are_executable() -> None:
+    """A skill sheet that names a script without an interpreter needs that file
+    to carry its own executable bit.
+
+    The Dockerfile PRESERVES modes rather than granting them -- it normalises
+    0644 and 0755 and adds neither -- so a script committed 0644 lands 0644 in
+    the image and every bare-path invocation fails with Permission denied. The
+    failure surfaces as a brief that never arrives, which reads like a quiet
+    news day, so it is worth catching in the checkout.
+    """
+    print("\nevery bare-path invocation in a skill sheet is executable")
+    invocation = re.compile(r"^\s*/var/lib/hermes/skills/(\S+\.py)", re.M)
+    named: set[str] = set()
+    for sheet in sorted(ROOT.glob("tb-*/SKILL.md")):
+        named.update(invocation.findall(sheet.read_text(encoding="utf-8")))
+    check(bool(named), "the sweep found invocations to check")
+    for relative in sorted(named):
+        source = ROOT / relative
+        check(source.exists(), f"the sheet names a script that exists: {relative}")
+        if source.exists():
+            check(os.access(source, os.X_OK),
+                  f"{relative} is executable, as its sheet invokes it")
+
+
 def main() -> int:
     test_schedule_expression()
     test_registered_jobs()
     test_deliver_target()
     test_config_validation()
+    test_bare_path_invocations_are_executable()
     print()
     if FAILURES:
         print(f"{len(FAILURES)} failing check(s)")

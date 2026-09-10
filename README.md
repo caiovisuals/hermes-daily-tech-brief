@@ -41,7 +41,25 @@ owner: Caio Oliveira
 This project is built as a Hermes skill/agent and is designed to work with Hermes' existing tools and capabilities rather than implementing a separate AI system.<br/>
 The project may introduce custom scripts or integrations when deterministic processing or external services are required.
 
+## Tests
+
+No framework, so they run anywhere the skills run:
+
+```sh
+python3 tests/test_filtering.py          # deduplication and stack matching
+python3 tests/test_schedule.py           # the cron spec's dangerous parts
+python3 tests/test_agent_index_service.py # the reporter, run in a sandbox
+```
+
+`test_agent_index_service.py` starts the real `run` script against a fake
+container environment and a stub client, because a test that greps for a string
+passes on a service that would not boot.
+
 ## Hackathon
 
 Built for the AI Worth Using × Plow Hermes Hackathon.<br/>
 The project uses the required AI Worth Using client for usage reporting and integrates with an open-source Plow tool.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
