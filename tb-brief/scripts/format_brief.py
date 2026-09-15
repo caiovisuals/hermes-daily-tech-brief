@@ -29,6 +29,8 @@ from pathlib import Path
 
 REQUIRED_STORY_FIELDS = ("title", "summary", "why_it_matters", "url", "source")
 
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
 def default_outdir() -> Path:
     """Archive under the agent's home, which is where its state belongs.
 
@@ -79,6 +81,10 @@ def validate(brief: dict, allowed: set[str] | None) -> list[str]:
     problems: list[str] = []
     if not brief.get("sections"):
         problems.append("brief has no sections")
+
+    ate = str(brief.get("date", "")).strip()
+    if date and not DATE_RE.match(date):
+        problems.append(f"date must be YYYY-MM-DD, got {date!r}")
 
     for section, story in iter_stories(brief):
         label = story.get("title") or "<untitled story>"
@@ -277,14 +283,32 @@ def main() -> int:
         return 2
 
     allowed: set[str] | None = None
-    if args.verify_against and args.verify_against.exists():
-        ranked = json.loads(args.verify_against.read_text(encoding="utf-8"))
+    if args.verify_against:
+        if not args.verify_against.exists():
+            print(
+                f"cannot verify: {args.verify_against} does not exist. Run filter_news.py "
+                "first, or drop --verify-against to render without checking the links.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            ranked = json.loads(args.verify_against.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"cannot verify: {args.verify_against} is unreadable: {exc}", file=sys.stderr)
+            return 2
         allowed = set()
         for story in ranked.get("stories", []):
             allowed.add(story.get("canonical_url") or canonical_url(story.get("url", "")))
             for other in story.get("also_covered_by", []):
                 allowed.add(canonical_url(other.get("url", "")))
         allowed.discard("")
+        if not allowed:
+            print(
+                f"cannot verify: {args.verify_against} carries no story URLs, so every link "
+                "in the brief would be rejected. Re-run the collect and rank steps.",
+                file=sys.stderr,
+            )
+            return 2
 
     problems = validate(brief, allowed)
     unverified = [p for p in problems if "not among the collected candidates" in p]

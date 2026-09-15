@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import html
 import json
 import re
 import sys
@@ -83,19 +84,18 @@ def story_id(url: str, title: str) -> str:
 
 
 def strip_html(raw: str) -> str:
+    """Tags out, entities decoded, whitespace collapsed.
+
+    html.unescape rather than a hand-written table: newsrooms publish
+    `&rsquo;`, `&ldquo;`, `&hellip;`, `&mdash;` and hex refs like `&#x27;` in
+    every other headline, and a six-entry table left all of them in the brief
+    as raw source. The whole named-entity set is in the standard library.
+    """
     if not raw:
         return ""
     text = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
     text = re.sub(r"(?s)<[^>]+>", " ", text)
-    text = (
-        text.replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", '"')
-        .replace("&#39;", "'")
-    )
-    text = re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))), text)
+    text = html.unescape(text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -142,6 +142,22 @@ def _text(node) -> str:
     return strip_html("".join(node.itertext()))
 
 
+def _child(node, name: str):
+    """A child by local name, whatever namespace the feed declares it in.
+
+    RSS 2.0 puts `title`, `link` and `description` in no namespace, RSS 1.0
+    (RDF) puts the same names in the RSS 1.0 namespace. A plain
+    `item.find("link")` finds the first and misses the second, so every RDF
+    item came out with an empty URL and was dropped as unusable, silently.
+    """
+    if node is None:
+        return None
+    for child in node:
+        if isinstance(child.tag, str) and child.tag.split("}")[-1] == name:
+            return child
+    return None
+
+
 def _atom_link(entry) -> str:
     fallback = ""
     for link in entry.findall(f"{ATOM}link"):
@@ -164,14 +180,15 @@ def parse_feed(payload: bytes) -> list[dict]:
         tag = item.tag.split("}")[-1]
         if tag != "item":
             continue
-        title = _text(item.find("title"))
-        link = _text(item.find("link")) or (item.find("link").get("href") if item.find("link") is not None else "")
+        title = _text(_child(item, "title"))
+        link_node = _child(item, "link")
+        link = _text(link_node) or (link_node.get("href", "") if link_node is not None else "")
         if not link:
-            guid = item.find("guid")
+            guid = _child(item, "guid")
             if guid is not None and (guid.get("isPermaLink") or "true") == "true":
                 link = _text(guid)
-        summary = _text(item.find("description")) or _text(item.find(f"{CONTENT}encoded"))
-        published = _text(item.find("pubDate")) or _text(item.find(f"{DC}date"))
+        summary = _text(_child(item, "description")) or _text(item.find(f"{CONTENT}encoded"))
+        published = _text(_child(item, "pubDate")) or _text(item.find(f"{DC}date"))
         if title or link:
             entries.append({"title": title, "url": link, "summary": summary, "published_raw": published})
 

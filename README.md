@@ -23,8 +23,8 @@ Instead of manually checking dozens of websites every morning, Hermes researches
 
 ## Build and run
 
-The image is the `plow-hermes-agent` base with this repo's persona and three
-skills copied over it. The base tag is pinned by digest in the `Dockerfile`;
+The image is the `plow-hermes-agent` base with this repo's persona and three skills copied over it.
+The base tag is pinned by digest in the `Dockerfile`;
 see the comment there before bumping it.
 
 ```sh
@@ -107,8 +107,12 @@ The project may introduce custom scripts or integrations when deterministic proc
 No framework, so they run anywhere the skills run:
 
 ```sh
-python3 tests/test_filtering.py          # deduplication and stack matching
-python3 tests/test_schedule.py           # the cron spec's dangerous parts
+for suite in tests/test_*.py; do python3 "$suite"; done
+
+python3 tests/test_collect.py             # feed parsing, for every shape publishers ship
+python3 tests/test_filtering.py           # deduplication and stack matching
+python3 tests/test_render.py              # the no-fabrication guarantee
+python3 tests/test_schedule.py            # the cron spec's dangerous parts
 python3 tests/test_agent_index_service.py # the reporter, run in a sandbox
 ```
 

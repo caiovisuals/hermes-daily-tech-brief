@@ -3,7 +3,7 @@
   "version": 1,
   "stack": {
     "python":     ["python", "cpython", "pypi", "pip", "uv", "poetry", "django", "flask", "fastapi", "pydantic"],
-    "javascript": ["javascript", "ecmascript", "npm", "yarn", "pnpm", "es20"],
+    "javascript": ["javascript", "ecmascript", "npm", "yarn", "pnpm"],
     "typescript": ["typescript", "ts 5", "tsc", "type-safe"],
     "node":       ["node.js", "nodejs", "npm", "express", "fastify"],
     "deno":       ["deno", "jsr"],
@@ -51,7 +51,7 @@
     "huggingface":["hugging face", "huggingface", "transformers", "safetensors", "datasets"],
     "pytorch":    ["pytorch", "torch", "cuda", "triton"],
     "langchain":  ["langchain", "langgraph", "langsmith"],
-    "llm":        ["llm", "large language model", "foundation model", "inference", "context window", "fine-tun"],
+    "llm":        ["llm", "large language model", "foundation model", "inference", "context window", "fine-tuning", "fine-tune"],
     "agents":     ["ai agent", "agentic", "tool use", "mcp", "model context protocol", "autonomous agent"],
     "rag":        ["rag", "retrieval-augmented", "vector database", "embedding"],
 

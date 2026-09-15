@@ -54,9 +54,15 @@ Add to the `stack` object in `references/stack-keywords.json`:
 "elixir": ["elixir", "phoenix framework", "erlang", "beam vm", "hex.pm"]
 ```
 
-Terms match case-insensitively on word boundaries. Keep them specific: a term
-like `go` alone would match "going", which is why the mapping uses `golang` and
-`go 1.` instead. Test a mapping before trusting it:
+Terms match case-insensitively. A term is anchored at whichever of its ends is
+alphanumeric, so `react` does not fire on "reactor", while `go 1.`, `gpt-` and
+`cve-` still match the version or identifier that follows them. A term ending
+in a letter is a whole word and not a prefix: write `fine-tuning`, not
+`fine-tun`.
+
+Keep them specific: a term like `go` alone would match "going", which is why
+the mapping uses `golang` and `go 1.` instead. Test a mapping before trusting
+it:
 
 ```bash
 python3 tests/test_filtering.py

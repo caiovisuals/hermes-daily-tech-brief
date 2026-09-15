@@ -29,7 +29,8 @@ import subprocess
 import sys
 
 HERMES = "/opt/hermes/bin/hermes"
-JOBS_FILE = "/var/lib/hermes/cron/jobs.json"
+HERMES_HOME = os.environ.get("HERMES_HOME", "/var/lib/hermes")
+JOBS_FILE = os.path.join(HERMES_HOME, "cron", "jobs.json")
 JOB_NAME = "tb-daily-brief"
 
 PROMPT = (
@@ -40,8 +41,7 @@ PROMPT = (
 
 
 def config_path() -> pathlib.Path:
-    home = os.environ.get("HERMES_HOME", "/var/lib/hermes")
-    return pathlib.Path(home) / "tb" / "config.json"
+    return pathlib.Path(HERMES_HOME) / "tb" / "config.json"
 
 
 def load_config(path: pathlib.Path) -> dict:

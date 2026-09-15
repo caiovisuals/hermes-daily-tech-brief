@@ -67,14 +67,14 @@ while :; do
         /opt/hermes/.venv/bin/python3 /opt/plow/agent-index-client.py \
         --register --agent "$AGENT_ID" >/dev/null || {
       echo "agent-index: no index key this hour, not reporting" >&2
-      /bin/sleep 3600
+      sleep 3600
       continue
       }
       ;;
     *)
       echo "agent-index: the client could not read this install's state (above);" >&2
       echo "standing off rather than registering over it." >&2
-      /bin/sleep 3600
+      sleep 3600
       continue
       ;;
   esac
@@ -89,5 +89,5 @@ while :; do
     env HOME="$HERMES_HOME" HERMES_HOME="$HERMES_HOME" AGENT_ID="$AGENT_ID" \
     /opt/hermes/.venv/bin/python3 /opt/plow/agent-index-client.py \
     || echo "agent-index: reporter exited non-zero, see the line above" >&2
-  /bin/sleep 3600
+  sleep 3600
 done

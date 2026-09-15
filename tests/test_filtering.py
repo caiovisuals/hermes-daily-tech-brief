@@ -8,10 +8,12 @@ No test framework required, so it runs anywhere the skill runs:
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tb-brief" / "scripts"))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tb-brief" / "scripts"))
 
 from filter_news import (  # noqa: E402
     TITLE_SIMILARITY,
@@ -134,10 +136,70 @@ def test_stack_matching() -> None:
           "unmapped tag falls back to a literal term match")
 
 
+def test_open_ended_terms_match_what_follows_them() -> None:
+    """Half the shipped catalog is written to be followed by a version.
+
+    `go 1.`, `git 2.`, `gpt-`, `cve-` all end where a number begins, and a
+    blanket trailing `(?![a-z0-9])` forbade exactly the character that has to
+    come next -- so none of them could ever match. A reader who declared `go`
+    got nothing from "Go 1.25 is released". The same at the front: `.net`
+    never matched "ASP.NET", because a letter precedes the dot.
+    """
+    print("\nterms that end where a version begins")
+    stack_map = {
+        "go": ["golang", "go 1.", "go module"],
+        "openai": ["openai", "gpt-", "chatgpt"],
+        "security": ["cve-", "vulnerability"],
+        "csharp": ["c#", ".net", "dotnet"],
+    }
+    index = build_term_index(stack_map, ["go", "openai", "security", "csharp"])
+
+    for headline, want in [
+        ("Go 1.25 is released", ["go"]),
+        ("OpenAI ships GPT-5.5 to the API", ["openai"]),
+        ("CVE-2026-1234 is being actively exploited", ["security"]),
+        ("ASP.NET Core 11 hits preview", ["csharp"]),
+    ]:
+        check(sorted(match_stack(headline, index)) == want,
+              f"{headline!r} matches {want}")
+
+    # The anchoring still has to hold where it was doing its job.
+    for headline in ("Going to production with Postgres", "A gopher walks in",
+                     "Algorithmic trading, explained"):
+        check(match_stack(headline, index) == [],
+              f"{headline!r} still matches nothing")
+
+
+def test_the_shipped_keyword_catalog_is_matchable() -> None:
+    """A term nothing can match is a mapping that silently does not exist.
+
+    Catches the `fine-tun` / `es20` shape: written as a word prefix, which the
+    matcher does not do, so the tag quietly lost that signal.
+    """
+    print("\nevery shipped term can match the text it is written for")
+    catalog = json.loads(
+        (ROOT / "tb-brief" / "references" / "stack-keywords.json").read_text(encoding="utf-8")
+    )["stack"]
+    unmatchable = [
+        f"{tag}: {term!r}"
+        for tag, terms in sorted(catalog.items())
+        for term in terms
+        # The term inside a sentence, which is how a headline carries it.
+        if match_stack(f"today {term.strip()} landed", build_term_index({tag: [term]}, [tag]))
+        != [tag]
+    ]
+    for entry in unmatchable:
+        print(f"        {entry} cannot match its own text")
+    check(not unmatchable,
+          f"all {sum(len(t) for t in catalog.values())} mapped terms are matchable")
+
+
 def main() -> int:
     test_similarity()
     test_clustering()
     test_stack_matching()
+    test_open_ended_terms_match_what_follows_them()
+    test_the_shipped_keyword_catalog_is_matchable()
     print()
     if FAILURES:
         print(f"{len(FAILURES)} failing check(s)")

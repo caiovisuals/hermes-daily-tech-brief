@@ -17,42 +17,23 @@ metadata:
       - briefing
       - research
       - daily
-    blueprint:
-      schedule: "0 8 * * *"
-      deliver: origin
-      prompt: >-
-        Produce today's tech brief following the skill workflow. Report usage to
-        the Agent Index when finished.
-    config:
-      - key: techbrief.stack
-        description: >-
-          Comma separated technologies the reader runs. Stories touching these
-          are ranked first. See references/stack-keywords.json for known tags;
-          unknown tags are matched literally.
-        default: ""
-        prompt: "Which technologies do you work with? (e.g. python,react,postgres,aws)"
-      - key: techbrief.owner
-        description: "Name the brief is addressed to."
-        default: ""
-        prompt: "Who is this brief for?"
-      - key: techbrief.language
-        description: "Language the brief is written in (BCP 47 tag)."
-        default: "en-US"
-        prompt: "Which language should the brief be written in?"
-      - key: techbrief.max_stories
-        description: "Maximum stories in one brief."
-        default: "8"
-      - key: techbrief.window_hours
-        description: "How far back to look for stories."
-        default: "24"
-      - key: techbrief.topics
-        description: >-
-          Optional topic filter. Any of: ai, tech, devtools, cloud, security,
-          startups, research. Empty means all topics.
-        default: ""
-      - key: techbrief.output_dir
-        description: "Where dated briefs and the history file are archived."
-        default: "~/.hermes/tech-brief"
+    configured_by: tb-setup
+    scheduled_by: tb-schedule
+    config_file: /var/lib/hermes/tb/config.json
+    archive_dir: /var/lib/hermes/tb
+    skills:
+      - name: tb-setup
+        purpose: >-
+          First contact and configuration. Writes config.json: owner, language,
+          stack, topics, max_stories, window_hours, and the delivery hour.
+      - name: tb-schedule
+        purpose: >-
+          Registers the daily cron row from that config, idempotently. A
+          bring-up step -- a rebuilt home does not replay it.
+      - name: tb-brief
+        purpose: >-
+          The brief itself: collect, rank, read the sources, write, verify,
+          render, deliver.
 required_environment_variables:
   - name: PLOW_AGENT_TOKEN
     prompt: "Plow agent token"
@@ -140,13 +121,7 @@ containing an invented source will not render. Do not pass
 
 ## Output
 
-Organize the briefing into:
-
-1. Artificial Intelligence
-2. Technology
-3. Developer / Engineering
-4. Important announcements
-
+The briefing is organised into the sections listed under **Sections** below.
 Each item must contain:
 
 - Headline
@@ -216,6 +191,9 @@ Use only the sections that have stories. Order them this way.
 - A short honest brief beats a padded one. Three real stories is a good day.
 - If every feed failed, say so and deliver nothing rather than filling space.
 
-See `references/quality-rules.md` for the full editorial standard,
-`references/sources.md` for the source hierarchy, and `references/topics.md`
-for topic and stack coverage.
+`tb-brief/SKILL.md` is the sheet the agent follows run by run; this file is the
+manifest. Where they describe the same thing, the sheet is the one that runs.
+
+See `tb-brief/references/quality-rules.md` for the full editorial standard,
+`tb-brief/references/sources.md` for the source hierarchy, and
+`tb-brief/references/topics.md` for topic and stack coverage.

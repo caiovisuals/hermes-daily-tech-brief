@@ -15,7 +15,9 @@ No test framework required:
 
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -154,12 +156,88 @@ def test_render_shape() -> None:
     check(f"Also covered by: [InfoQ]({OTHER})" in markdown, "corroboration is shown")
 
 
+def run_cli(*argv: str) -> int:
+    """format_brief.py as the skill sheet invokes it: through its own argv."""
+    saved = sys.argv
+    try:
+        sys.argv = ["format_brief.py", *argv]
+        return format_brief.main()
+    finally:
+        sys.argv = saved
+
+
+def test_verification_cannot_be_switched_off_by_a_wrong_path() -> None:
+    """`--verify-against` pointing at nothing used to mean NO verification.
+
+    `allowed` stayed None, every URL check was skipped, and the run exited 0 --
+    so one mistyped path, or a rank step that never wrote its file, quietly
+    turned off the only thing standing between a fabricated link and the
+    reader. Asked to verify and unable to, the renderer has to refuse.
+    """
+    print("\nasked to verify and unable to, it refuses rather than rendering")
+    invented = dict(brief_with(url="https://invented.example/nope"))
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        brief = tmp / "brief.json"
+        brief.write_text(json.dumps(invented), encoding="utf-8")
+
+        check(run_cli("--in", str(brief), "--verify-against", str(tmp / "absent.json"),
+                      "--no-archive", "--quiet") == 2,
+              "a --verify-against that does not exist stops the run")
+
+        empty = tmp / "empty.json"
+        empty.write_text(json.dumps({"stories": []}), encoding="utf-8")
+        check(run_cli("--in", str(brief), "--verify-against", str(empty),
+                      "--no-archive", "--quiet") == 2,
+              "a ranked file carrying no URLs stops the run")
+
+        broken = tmp / "broken.json"
+        broken.write_text("{not json", encoding="utf-8")
+        check(run_cli("--in", str(brief), "--verify-against", str(broken),
+                      "--no-archive", "--quiet") == 2,
+              "an unreadable ranked file stops the run")
+
+        ranked = tmp / "ranked.json"
+        ranked.write_text(json.dumps({"stories": [{"url": REAL, "canonical_url":
+                          format_brief.canonical_url(REAL)}]}), encoding="utf-8")
+        good = tmp / "good.json"
+        good.write_text(json.dumps(brief_with()), encoding="utf-8")
+        check(run_cli("--in", str(good), "--verify-against", str(ranked),
+                      "--no-archive", "--quiet") == 0,
+              "and a real ranked file still verifies and renders")
+
+
+def test_the_archive_filename_stays_in_the_archive() -> None:
+    """`date` comes from the agent and becomes a path. `"../../x"` wrote the
+    brief outside --outdir entirely and dropped it out of index.md, with a
+    success message and exit 0.
+    """
+    print("\nthe date is a date, because it becomes the archive filename")
+    for bad in ("../../escaped", "2026-09-09/../..", "not-a-date", "2026-9-9"):
+        problems = format_brief.validate({**brief_with(), "date": bad}, None)
+        check(any("date must be YYYY-MM-DD" in p for p in problems),
+              f"rejects a date of {bad!r}")
+    check(format_brief.validate(brief_with(), None) == [], "and accepts a real one")
+
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        brief = tmp / "brief.json"
+        brief.write_text(json.dumps({**brief_with(), "date": "../../escaped"}), encoding="utf-8")
+        outdir = tmp / "archive"
+        code = run_cli("--in", str(brief), "--outdir", str(outdir), "--quiet")
+        check(code == 1, "the run fails rather than writing outside the archive")
+        check(not (tmp.parent / "escaped.md").exists() and not (tmp / "escaped.md").exists(),
+              "and nothing was written outside it")
+
+
 def main() -> int:
     test_canonicalizer_parity()
     test_unverified_links_are_refused()
     test_required_fields()
     test_continuity_rendering()
     test_render_shape()
+    test_verification_cannot_be_switched_off_by_a_wrong_path()
+    test_the_archive_filename_stays_in_the_archive()
     print()
     if FAILURES:
         print(f"{len(FAILURES)} failing check(s)")

@@ -10,14 +10,14 @@ a Markdown sheet is a change to behaviour and gets reviewed like code.
 | Path | What it is |
 |---|---|
 | `runtime/SOUL.md` | The persona. Replaces the base image's own. Voice, scope, and the non-negotiable rules. |
-| `SKILL.md` | The agent manifest: metadata, config keys, workflow, brief contract. |
+| `SKILL.md` | The agent manifest: metadata, and where configuration and the schedule actually live. Behaviour is in the sheets below. |
 | `tb-brief/` | The daily brief: the sheet, `references/` (feeds, sources, topics, quality rules), and the three scripts. |
 | `tb-setup/` | First-run conversation; writes `config.json`. |
 | `tb-schedule/` | Registers the daily cron row. Bring-up step, run once after setup. |
 | `image/s6-overlay/` | The hourly Agent Index reporter service. |
 | `vendor/client.pin` | The commit and sha256 of the Agent Index client, fetched at build. |
 | `templates/`, `examples/` | The brief's shape, and a rendered example of it. |
-| `tests/` | Three scripts, no framework. |
+| `tests/` | Plain `python3` scripts, no framework. |
 
 Three scripts own everything deterministic — collection, ranking,
 verification — and the agent owns judgement. That split is the design. If you
@@ -54,14 +54,20 @@ python3 tb-brief/scripts/collect_news.py --check-feeds
 
 ## Tests
 
-No framework, so they run anywhere the skills run. Run all three before opening
-a pull request:
+No framework, so they run anywhere the skills run. Run all of them before
+opening a pull request — CI runs exactly this loop:
 
 ```sh
-python3 tests/test_filtering.py           # deduplication and stack matching
-python3 tests/test_schedule.py            # the cron spec's dangerous parts
-python3 tests/test_agent_index_service.py # the reporter, in a sandbox
+for suite in tests/test_*.py; do python3 "$suite"; done
 ```
+
+| Suite | What it pins |
+|---|---|
+| `test_collect.py` | Feed parsing, for every shape publishers ship, and the catalog's own schema |
+| `test_filtering.py` | Deduplication and stack matching |
+| `test_render.py` | The no-fabrication guarantee, and the archive path |
+| `test_schedule.py` | The cron spec's dangerous parts |
+| `test_agent_index_service.py` | The reporter, in a sandbox |
 
 Write new tests in the same style: plain `python3`, a `check(condition, label)`
 helper, a non-zero exit on failure, and no dependencies. Follow the existing
@@ -98,11 +104,18 @@ aggregator's copy of it, and prefer full-text feeds over headline-only ones.
 **Adding stack keywords** — `tb-brief/references/stack-keywords.json` maps a
 stack tag the reader declares to the terms that signal a story touches it
 (`kubernetes` → `k8s`, `kubectl`, `helm`, `eks`, …). Matching is
-case-insensitive on word boundaries against the headline and summary, and an
-unknown tag falls back to matching itself literally — so a tag is only worth
-adding when its real-world vocabulary is wider than its name. Keep terms
-specific: a term that shows up in unrelated stories pulls noise to the top of
-the brief.
+case-insensitive against the headline and summary, and an unknown tag falls
+back to matching itself literally — so a tag is only worth adding when its
+real-world vocabulary is wider than its name. Keep terms specific: a term that
+shows up in unrelated stories pulls noise to the top of the brief.
+
+A term is anchored at whichever of its ends is alphanumeric, so `react` does
+not fire on "reactor" — but a term written to be followed by something, like
+`go 1.`, `gpt-` or `cve-`, matches the version or identifier that comes next.
+A term ending in a letter is a whole word, not a prefix: `fine-tun` matches
+nothing, `fine-tuning` matches. `test_filtering.py` checks that every shipped
+term can match its own text, so a mapping that silently does nothing fails
+there rather than in a brief.
 
 **Editorial rules** — `tb-brief/references/quality-rules.md` and the rules
 sections of `SOUL.md` and `SKILL.md`. These change what the agent writes. Say in
@@ -111,7 +124,7 @@ the PR what a brief would have looked like before and after.
 ## Pull requests
 
 1. Branch off `main`, one topic per branch.
-2. Run the three test scripts, plus `--check-feeds` if you touched feeds.
+2. Run the test suites, plus `--check-feeds` if you touched feeds.
 3. Write a commit message that says why, in the imperative: `rank security
    advisories above stack matches`, not `update filter`.
 4. In the PR body: what changed, what you ran, and — for behaviour changes —

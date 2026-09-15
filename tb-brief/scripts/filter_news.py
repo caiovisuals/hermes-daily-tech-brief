@@ -158,13 +158,35 @@ def build_term_index(stack_map: dict, tags: list[str]) -> dict[str, list[str]]:
     return index
 
 
+def term_pattern(term: str) -> str:
+    """A term, anchored so it does not fire inside a longer word.
+
+    The guard belongs on the alphanumeric ENDS of the term only. Half the
+    catalog is deliberately open-ended -- `go 1.`, `git 2.`, `gpt-`, `cve-`
+    are written to be followed by a version or an identifier -- and a blanket
+    trailing `(?![a-z0-9])` made every one of them unmatchable: the character
+    that has to follow them is exactly the one it forbids. "Go 1.25 is
+    released" matched nothing for a reader who declared `go`, and
+    "CVE-2026-1234 exploited in the wild" matched nothing for `security`.
+
+    The same applies at the front: `.net` never matched "ASP.NET", because the
+    character before the dot is a letter.
+    """
+    term = term.lower().strip()
+    pattern = re.escape(term)
+    if term[:1].isalnum():
+        pattern = r"(?<![a-z0-9])" + pattern
+    if term[-1:].isalnum():
+        pattern = pattern + r"(?![a-z0-9])"
+    return pattern
+
+
 def match_stack(text: str, term_index: dict[str, list[str]]) -> list[str]:
     lowered = text.lower()
     hits = []
     for tag, terms in term_index.items():
         for term in terms:
-            pattern = r"(?<![a-z0-9])" + re.escape(term.lower().strip()) + r"(?![a-z0-9])"
-            if re.search(pattern, lowered):
+            if term.strip() and re.search(term_pattern(term), lowered):
                 hits.append(tag)
                 break
     return hits
