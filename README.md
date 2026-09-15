@@ -21,11 +21,68 @@ Instead of manually checking dozens of websites every morning, Hermes researches
 - Configurable daily schedule
 - Source and information quality rules
 
-## Installation
+## Build and run
 
-Install the Hermes agent first by following the official Hermes installation instructions.<br/>
-Then install Hermes Tech Brief through the AI Worth Using Agent Index.<br/>
-After installation, configure the agent according to your preferences.
+The image is the `plow-hermes-agent` base with this repo's persona and three
+skills copied over it. The base tag is pinned by digest in the `Dockerfile`;
+see the comment there before bumping it.
+
+```sh
+# 1. A Plow credential, written beside compose.yml. Never committed --
+#    .gitignore and .dockerignore both exclude it.
+bin/plow-agents login && bin/plow-agents mint
+
+# 2. Build and start.
+docker compose up --build -d
+```
+
+The agent's home is a named volume that shadows the image, so an edit to
+`runtime/SOUL.md` or to a skill is only picked up once it is gone:
+
+```sh
+docker compose down -v && docker compose up --build -d
+```
+
+First boot has no `config.json`, so `SOUL.md` routes the owner to `tb-setup`.
+Run `tb-schedule` once after that to register the daily cron row -- a rebuild
+does not replay it.
+
+## Agent Index
+
+The agent reports its usage to the [AI Worth Using Agent
+Index](https://aiworthusing.com/agent-index). Three things put it on the
+leaderboard, and all three are required:
+
+**1. MIT licensed.** See [LICENSE](LICENSE).
+
+**2. Registered.** Once, from the host:
+
+```sh
+curl -O https://raw.githubusercontent.com/plow-pbc/agent-index-client/main/standalone/agent_index_client.py
+set -a; . ./plow-credentials; set +a
+python3 agent_index_client.py --register \
+  --agent hermes-daily-tech-brief \
+  --name "Hermes Daily Tech Brief" \
+  --blurb "A daily, source-backed briefing on the tech and AI news that touches your stack."
+```
+
+Then open the agent's page on the Index and click **Verify my agent**. That
+step is a human one and cannot be scripted.
+
+The id registered here must be the `AGENT_ID` in `compose.yml`. Registering one
+id and shipping another fails silently: the reporter runs happily every hour,
+into a page nobody owns. `tests/test_agent_index_service.py` pins the two
+together.
+
+**3. Reporting.** Already in the image -- the `agent-index` s6 service
+(`image/s6-overlay/`) runs the pinned client hourly. It registers itself on
+first run if needed, and stands down rather than guessing when `AGENT_ID` is
+unset. There is no switch: an owner who does not want their usage reported
+builds an image without the service.
+
+The client itself is fetched at build time from the commit `vendor/client.pin`
+names and checked against the sha256 beside it, rather than tracked here --
+`plow-pbc/agent-index-client` owns that file.
 
 ## Configuration
 
