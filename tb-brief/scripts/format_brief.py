@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import urllib.parse
 from datetime import datetime, timezone
@@ -40,6 +41,11 @@ def default_outdir() -> Path:
 
 # validation
 
+TRACKING_PARAMS = re.compile(
+    r"^(utm_[a-z_]+|ref|ref_src|source|fbclid|gclid|mc_cid|mc_eid|at_medium|at_campaign)$",
+    re.IGNORECASE,
+)
+
 def canonical_url(url: str) -> str:
     """Mirror of collect_news.canonical_url, kept local so each script stands alone."""
     url = (url or "").strip()
@@ -55,7 +61,7 @@ def canonical_url(url: str) -> str:
     query = [
         (k, v)
         for k, v in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
-        if not k.lower().startswith("utm_") and k.lower() not in {"ref", "ref_src", "source", "fbclid", "gclid"}
+        if not TRACKING_PARAMS.match(k)
     ]
     path = parts.path.rstrip("/") or "/"
     return urllib.parse.urlunsplit(
@@ -89,6 +95,23 @@ def validate(brief: dict, allowed: set[str] | None) -> list[str]:
                 f"verified: {url}"
             )
 
+        for other in story.get("also_covered_by") or []:
+            if not isinstance(other, dict):
+                problems.append(f"{label!r}: also_covered_by entries must be objects")
+                continue
+            other_url = str(other.get("url", "")).strip()
+            if not other_url:
+                continue
+            if not other_url.lower().startswith(("http://", "https://")):
+                problems.append(
+                    f"{label!r}: also_covered_by url is not an http(s) link: {other_url}"
+                )
+            elif allowed is not None and canonical_url(other_url) not in allowed:
+                problems.append(
+                    f"{label!r}: also_covered_by url was not among the collected candidates, "
+                    f"so it cannot be verified: {other_url}"
+                )
+
         if not str(section.get("name", "")).strip():
             problems.append(f"{label!r}: belongs to a section with no name")
     return problems
@@ -102,6 +125,27 @@ def format_date(raw: str | None) -> str:
         return datetime.fromisoformat(raw.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M UTC")
     except ValueError:
         return raw
+
+
+def continuity_line(raw) -> str:
+    """The contract asks for a sentence; ranked.json carries a dict.
+
+    `filter_news.py` writes `continuity` as {previous_title, previous_url,
+    previous_day, similarity}, and a story copied across from the shortlist
+    brings that object with it. Rendering it through str() put a Python repr --
+    braces, quotes and a similarity float -- into a brief somebody reads over
+    breakfast. Prose is still what we want, so a dict is turned into a sentence
+    rather than rejected.
+    """
+    if not raw:
+        return ""
+    if isinstance(raw, dict):
+        title = str(raw.get("previous_title", "")).strip()
+        day = str(raw.get("previous_day", "")).strip()
+        if not title:
+            return ""
+        return f"develops {title}" + (f", first sent {day}" if day else "")
+    return str(raw).strip()
 
 
 def render(brief: dict) -> str:
@@ -136,8 +180,9 @@ def render(brief: dict) -> str:
             lines.append(f"**Why it matters.** {story['why_it_matters'].strip()}")
             lines.append("")
 
-            if story.get("continuity"):
-                lines += [f"*Follow-up: {str(story['continuity']).strip()}*", ""]
+            continuity = continuity_line(story.get("continuity"))
+            if continuity:
+                lines += [f"*Follow-up: {continuity}*", ""]
 
             tags = story.get("stack_matches") or []
             if tags:

@@ -54,6 +54,8 @@ RUN set -eu; \
 
 COPY image/s6-overlay/ /etc/s6-overlay/
 
+RUN find /etc/s6-overlay/s6-rc.d -type f -name run -exec chmod 0755 {} +
+
 # The instance directory the brief reads and tb-setup writes. Nothing exists
 # before first boot, so the image creates it empty: an unconfigured agent is
 # routed to tb-setup by SOUL.md.

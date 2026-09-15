@@ -1,0 +1,47 @@
+name: CI
+
+on:
+    push:
+        branches: ["**"]
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # The skills run on whatever python3 the base image ships and install
+          # nothing, so the floor is what matters here, not the newest release.
+          python-version: "3.11"
+
+      # No pip install step, and there should never be one: every script in
+      # this repo is standard library only, which is what lets a skill sheet
+      # invoke it directly inside an agent container.
+      - name: Run the suites
+        run: |
+          set -e
+          for suite in tests/test_*.py; do
+            echo "::group::$suite"
+            python3 "$suite"
+            echo "::endgroup::"
+          done
+
+  build:
+    name: image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Not pushed anywhere: this only answers whether the Dockerfile still
+      # builds. It pulls the pinned base and fetches the pinned agent-index
+      # client, so a bad pin or a moved base fails here rather than on an
+      # owner's machine.
+      - name: docker build
+        run: docker build --progress=plain -t hermes-daily-tech-brief:ci .

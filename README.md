@@ -49,13 +49,14 @@ does not replay it.
 
 ## Agent Index
 
-The agent reports its usage to the [AI Worth Using Agent
+The agent reports its token usage to the [AI Worth Using Agent
 Index](https://aiworthusing.com/agent-index). Three things put it on the
 leaderboard, and all three are required:
 
 **1. MIT licensed.** See [LICENSE](LICENSE).
 
-**2. Registered.** Once, from the host:
+**2. Registered.** Once, from the host, with the metadata that becomes the
+agent's public page:
 
 ```sh
 curl -O https://raw.githubusercontent.com/plow-pbc/agent-index-client/main/standalone/agent_index_client.py
@@ -63,7 +64,10 @@ set -a; . ./plow-credentials; set +a
 python3 agent_index_client.py --register \
   --agent hermes-daily-tech-brief \
   --name "Hermes Daily Tech Brief" \
-  --blurb "A daily, source-backed briefing on the tech and AI news that touches your stack."
+  --blurb "A daily, source-backed briefing on the tech and AI news that touches your stack." \
+  --repo https://github.com/caiovisuals/hermes-daily-tech-brief \
+  --runtime hermes \
+  --install-url https://github.com/caiovisuals/hermes-daily-tech-brief#install
 ```
 
 Then open the agent's page on the Index and click **Verify my agent**. That
