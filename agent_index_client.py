@@ -36,7 +36,7 @@ Reports use the stored Index-issued key; the Plow token is used only once to
 exchange for an assertion during registration.
 """
 import datetime
-import json, os, re, secrets, shutil, sqlite3, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import json, os, pathlib, re, secrets, shutil, sqlite3, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 
 if os.name == "nt":
     import msvcrt
@@ -416,22 +416,33 @@ def token():
              + WHERE_TO_GET_A_TOKEN)
 
 
+def _agentsview_exe():
+    """The agentsview executable, or None when it is not installed.
+
+    shutil.which first, because it is the only lookup that is right on both
+    platforms: on Windows it applies PATHEXT, so the agentsview.cmd shim an
+    install leaves behind is found, where a bare "agentsview" filename never
+    is. The explicit paths after it are the POSIX install locations that a cron
+    or a supervisor's stripped PATH routinely misses -- and they are only
+    consulted there, because os.access(X_OK) on Windows answers True for any
+    file that exists and so decides nothing.
+    """
+    found = shutil.which("agentsview")
+    if found:
+        return found
+    if os.name == "nt":
+        return None
+    for path in (os.path.expanduser("~/.local/bin/agentsview"),
+                 "/opt/homebrew/bin/agentsview",
+                 "/usr/local/bin/agentsview"):
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
 def from_agentsview(days):
     """date -> model -> counters, for whatever agentsview covers."""
-    candidates = [
-        shutil.which("agentsview"),
-        os.path.expanduser("~/.local/bin/agentsview"),
-        "/opt/homebrew/bin/agentsview",
-        "/usr/local/bin/agentsview",
-    ]
-
-    exe = next(
-        (
-            p for p in candidates
-            if p and os.path.isfile(p) and os.access(p, os.X_OK)
-        ),
-        None,
-    )
+    exe = _agentsview_exe()
 
     if not exe:
         print("  agentsview not installed — skipping that collector")
@@ -529,6 +540,17 @@ def _save_state(path, state):
 CHILD_ENV_KEEP = ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TZ",
                   "TMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
 
+# The Windows half of the same allowlist. None of these is a secret and all of
+# them are load-bearing: CreateProcess runs a .cmd shim -- which is what an
+# agentsview install leaves on PATH -- through COMSPEC, PATHEXT is what makes
+# that shim findable at all, SystemRoot is required by enough of the C runtime
+# that omitting it breaks unrelated programs, and USERPROFILE/APPDATA/
+# LOCALAPPDATA are Windows' HOME: strip them and agentsview reads a different
+# machine's worth of nothing and reports zero.
+CHILD_ENV_KEEP_NT = ("SystemRoot", "SystemDrive", "COMSPEC", "PATHEXT", "WINDIR",
+                     "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP",
+                     "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE")
+
 # agentsview's OWN configuration, from `agentsview --help` (v0.38.1), not from
 # memory. Everything with an AGENTSVIEW_ prefix passes by the rule below; these
 # are the ones that do not carry it -- the per-runtime source directories. An
@@ -544,10 +566,33 @@ AGENTSVIEW_SOURCE_DIRS = (
 
 
 def _child_env():
+    keep = CHILD_ENV_KEEP + AGENTSVIEW_SOURCE_DIRS
+    if os.name == "nt":
+        # Windows environment names are case-INSENSITIVE, and os.environ keeps
+        # whatever case the process was started with -- "Path" and "SYSTEMROOT"
+        # are both ordinary, and neither matches a literal in the tuples above.
+        # Compare the way the platform does, and pass each name through as it
+        # was found. On POSIX the names are case-sensitive and folding them
+        # would let a lowercase `path` through as if it were PATH, so this is
+        # deliberately not done there.
+        keep += CHILD_ENV_KEEP_NT
+        fold = str.upper
+    else:
+        fold = str
+    wanted = {fold(k) for k in keep}
     env = {k: v for k, v in os.environ.items()
-           if k in CHILD_ENV_KEEP or k in AGENTSVIEW_SOURCE_DIRS or k.startswith("AGENTSVIEW_")}
-    env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+           if fold(k) in wanted or fold(k).startswith("AGENTSVIEW_")}
+    # os.defpath, not a Unix literal: "/usr/local/bin:/usr/bin:/bin" is not a
+    # search path on Windows, it is one directory that does not exist, so a
+    # child reaching this default there could find nothing at all.
+    if not any(k.upper() == "PATH" for k in env):
+        env["PATH"] = os.defpath
     return env
+
+
+# The one table this collector reads, named once. Hermes documents it as the
+# per-model, per-task usage attribution rows of its session store.
+USAGE_TABLE = "session_model_usage"
 
 
 # What the collector actually reads. A table of the right NAME with none of
@@ -557,20 +602,129 @@ REQUIRED_COLUMNS = ("model", "input_tokens", "output_tokens",
                     "cache_read_tokens", "cache_write_tokens")
 
 
+# What a Hermes store can be called. state.db is the name Hermes uses; the
+# others exist so that discovery below recognises a SQLite file by its schema
+# rather than requiring it to be spelled the one way.
+STORE_SUFFIXES = (".db", ".sqlite", ".sqlite3")
+
+
+def _ro_uri(path):
+    """A read-only SQLite URI for a filesystem path.
+
+    Interpolating a path into "file:{path}?mode=ro" is wrong the moment the
+    path holds a character the URI parser owns: '?' opens the query string and
+    '#' the fragment, and SQLite percent-decodes whatever is left -- so a
+    profile directory containing either silently opens a different file, or
+    none. as_uri() percent-encodes them and renders a drive-letter path in the
+    file:///C:/... form SQLite expects, which is the difference between reading
+    C:/Users/.../state.db and reading nothing on Windows.
+    """
+    return pathlib.Path(os.path.abspath(path)).as_uri() + "?mode=ro"
+
+
 def _has_usage_table(db):
     """Whether this file is a Hermes store the collector can read."""
     try:
-        c = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        c = sqlite3.connect(_ro_uri(db), uri=True)
         try:
-            if not c.execute(
-                    "SELECT 1 FROM sqlite_master WHERE name='session_model_usage'").fetchone():
+            if not c.execute("SELECT 1 FROM sqlite_master WHERE name=?",
+                    (USAGE_TABLE,)).fetchone():
                 return False
-            have = {r[1] for r in c.execute("PRAGMA table_info(session_model_usage)")}
+            have = {r[1] for r in c.execute(f"PRAGMA table_info({USAGE_TABLE})")}
             return all(col in have for col in REQUIRED_COLUMNS)
         finally:
             c.close()
-    except sqlite3.Error:
+    except (sqlite3.Error, OSError, ValueError):
+        # OSError/ValueError: as_uri() refuses a path the platform cannot make
+        # absolute. A candidate we cannot even name is simply not the store.
         return False
+
+
+def hermes_homes(home=None):
+    """Where Hermes keeps its home, in the order to try.
+
+    The platform default is Hermes' own, out of its session-storage
+    documentation: the store is always get_hermes_home()/state.db, and
+    get_hermes_home() reads HERMES_HOME first and otherwise falls back to
+    %LOCALAPPDATA%/hermes on Windows and ~/.hermes elsewhere.
+
+    That fallback is the fix. This client tried ~/.hermes and ~/.hermes-life on
+    every platform, and on Windows ~ expands to the user profile -- a directory
+    Hermes never writes a store into. An install whose HERMES_HOME was set by
+    the installer but not exported into the shell the reporter runs from
+    therefore looked for the store in the only two places it cannot be, found
+    nothing, and reported zero.
+    """
+    if home:
+        return [home]
+    told = os.environ.get("HERMES_HOME")
+    if told:
+        return [told]
+    homes = []
+    if os.name == "nt":
+        # LOCALAPPDATA, not ~/AppData/Local: a roaming or redirected profile
+        # puts it somewhere else, and the variable is the only thing that knows.
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            homes.append(os.path.join(local, "hermes"))
+    # ~/.hermes is Hermes' POSIX default and ~/.hermes-life is where a Plow
+    # agent's own store lives. Kept on Windows too as a last resort: an install
+    # that set HOME and ran the POSIX layout is unusual but not impossible, and
+    # a candidate that is not there costs one stat.
+    homes += [os.path.expanduser("~/.hermes"), os.path.expanduser("~/.hermes-life")]
+    return homes
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def store_candidates(home):
+    """Files under `home` that could be the store, likeliest first.
+
+    <home>/state.db is where Hermes documents it and is always tried first.
+    What follows is DISCOVERY, not a list of invented names: a state.db one
+    directory down, and any SQLite-suffixed file sitting in the home itself.
+    Every one of them still has to carry the usage table before it is used, so
+    this looks for the SCHEMA and never for a path somebody guessed.
+
+    Most recently written first, because a home that holds both the live store
+    and a copy of it -- under backups/, say -- must not be read from the copy.
+    """
+    first = os.path.join(home, "state.db")
+    try:
+        names = sorted(os.listdir(home))
+    except OSError:
+        return [first]
+    rest = []
+    for name in names:
+        path = os.path.join(home, name)
+        if os.path.isdir(path):
+            nested = os.path.join(path, "state.db")
+            if os.path.isfile(nested):
+                rest.append(nested)
+        elif path != first and name.endswith(STORE_SUFFIXES):
+            rest.append(path)
+    rest.sort(key=lambda cand: (-_mtime(cand), cand))
+    return [first] + rest
+
+
+def find_store(homes):
+    """The first candidate under `homes` that really carries the usage table.
+
+    Falls back to <first home>/state.db when nothing does, so the caller can
+    say what it looked for -- and so a store that exists with the wrong schema
+    is still opened and reported as the read failure it is, rather than being
+    quietly skipped as an absent one.
+    """
+    for home in homes:
+        for cand in store_candidates(home):
+            if os.path.isfile(cand) and _has_usage_table(cand):
+                return cand
+    return os.path.join(homes[0], "state.db")
 
 
 def state_dir():
@@ -601,27 +755,16 @@ def from_hermes(days, home=None, state_path=None):
     Its four counters are disjoint (prompt = input + cache_read + cache_write)
     and reasoning is a subset of output, so nothing here is double counted.
     """
-    # Try each known Hermes home and take the first store that really carries
-    # the table. ~/.hermes can exist while holding a different schema, and the
-    # old code errored on it instead of trying ~/.hermes-life next door, which
-    # is where a Plow agent's store actually lives. Measured, not assumed.
     # Told where to look, or guessing. The difference decides what an absent
     # store MEANS, so it is carried rather than inferred later.
     configured = bool(home or os.environ.get("HERMES_HOME"))
-    # Told where to look, or guessing. ~/.hermes can exist while holding a
-    # different schema, so each candidate is checked for the TABLE rather than
-    # for existence: the old code errored on the first path instead of trying
-    # ~/.hermes-life next door, which is where a Plow agent's store actually
-    # lives. Measured, not assumed -- and private to this function, because
-    # identity deliberately does not resolve this way (see state_dir).
-    if home:
-        homes = [home]
-    elif os.environ.get("HERMES_HOME"):
-        homes = [os.environ["HERMES_HOME"]]
-    else:
-        homes = [os.path.expanduser("~/.hermes"), os.path.expanduser("~/.hermes-life")]
-    db = next((c for c in (os.path.join(h, "state.db") for h in homes)
-               if os.path.exists(c) and _has_usage_table(c)), os.path.join(homes[0], "state.db"))
+    # Each candidate is checked for the TABLE rather than for existence: a
+    # state.db can exist while holding a different schema, and the old code
+    # errored on the first path instead of looking next door. Measured, not
+    # assumed -- and private to this function, because identity deliberately
+    # does not resolve this way (see state_dir).
+    homes = hermes_homes(home)
+    db = find_store(homes)
     legacy_lost = False
     # The store is resolved BEFORE the ledger moves anywhere: a wrong or unset
     # HERMES_HOME would otherwise move the only copy into a directory that holds
@@ -671,17 +814,22 @@ def from_hermes(days, home=None, state_path=None):
                     # recover from if it turns out to be wrong.
                     print(f"  copied the usage ledger to {state_path}, keeping {STATE_PATH}")
     if not os.path.exists(db):
+        # Name every home that was searched, not just the one path that was
+        # tried last. "no store at <one path>" is the message that left this
+        # bug undiagnosable: it never said whether HERMES_HOME had been seen at
+        # all, so a reader could not tell a wrong home from an empty one.
+        looked = ", ".join(homes)
         if configured:
-            # Somebody named this path, and there is nothing there. That is a
-            # collector that FAILED, not one with nothing to say -- and the
+            # Somebody named this home, and there is no store under it. That is
+            # a collector that FAILED, not one with nothing to say -- and the
             # difference is the whole report: recorded as a failure it stops the
             # run, while returning empty lets an agentsview-only payload post
             # and REPLACE this agent's totals with numbers that omit Hermes.
-            FAILURES.append(f"hermes store {db}: configured but missing")
+            FAILURES.append(f"hermes store: no {USAGE_TABLE} store under {looked}")
         else:
             # Nobody said where Hermes lives and no store turned up in the usual
             # places. An agent that does not run Hermes is the common case.
-            print(f"  no Hermes store at {db} (set HERMES_HOME if that is wrong)")
+            print(f"  no Hermes store under {looked} (set HERMES_HOME if that is wrong)")
         return {}
     # Snapshot-and-diff, because the counters are CUMULATIVE per session.
     #
@@ -741,9 +889,9 @@ def from_hermes(days, home=None, state_path=None):
     # those columns. Take whichever exist: dropping one only risks merging two
     # rows that differ solely by it, and their deltas still sum correctly.
     try:
-        c = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        c = sqlite3.connect(_ro_uri(db), uri=True)
         try:
-            have = {r[1] for r in c.execute("PRAGMA table_info(session_model_usage)")}
+            have = {r[1] for r in c.execute(f"PRAGMA table_info({USAGE_TABLE})")}
             keycols = [k for k in ("session_id", "model", "billing_provider",
                                    "billing_base_url", "billing_mode", "task") if k in have]
             sel = ", ".join(f"COALESCE({k},'')" for k in keycols)
@@ -755,16 +903,17 @@ def from_hermes(days, home=None, state_path=None):
                 f"""SELECT {sel}, COALESCE(input_tokens,0), COALESCE(output_tokens,0),
                            COALESCE(cache_read_tokens,0), COALESCE(cache_write_tokens,0),
                            {"COALESCE(first_seen,0), COALESCE(last_seen,0)" if dated else "0, 0"}
-                    FROM session_model_usage""").fetchall()
+                    FROM {USAGE_TABLE}""").fetchall()
         finally:
             c.close()
-    except sqlite3.Error as e:
-        FAILURES.append(f"hermes store {db}: {e}")
+    except (sqlite3.Error, OSError, ValueError) as e:
+        FAILURES.append(f"hermes store {db}: {type(e).__name__}: {e}")
         return {}
 
     n = len(keycols)
     mi = keycols.index("model") if "model" in keycols else None
     fresh = fresh_install
+    credited = False
 
     def _day(ts):
         try:
@@ -809,6 +958,7 @@ def from_hermes(days, home=None, state_path=None):
         acc = day.setdefault(m, {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0})
         acc["input"] += d[0]; acc["output"] += d[1]
         acc["cache_read"] += d[2]; acc["cache_write"] += d[3]
+        credited = True
 
     # Keep the ledger bounded; nothing older than the window can be reported.
     cutoff = (datetime.date.today() - datetime.timedelta(days=max(days, 28) + 7)).isoformat()
@@ -819,6 +969,17 @@ def from_hermes(days, home=None, state_path=None):
         print(f"  Hermes baseline recorded — {filled} day(s) of same-day history recovered."
               if filled else
               "  Hermes baseline recorded — usage is reported from the next run on.")
+    elif not rows:
+        # The difference between "we are reading the wrong file" and "Hermes has
+        # not spent a token yet" is the entire debugging question, and until now
+        # a run answered neither: an empty store and a store nobody found both
+        # printed nothing at all and totalled zero. Say which it is.
+        print(f"  Hermes store at {db} holds no usage rows yet")
+    elif not credited and not lost:
+        # Not on the lost-ledger path: that run deliberately credits nothing and
+        # already said so, and "no new tokens" would contradict it.
+        print(f"  Hermes store at {db}: {len(rows)} usage row(s), "
+              f"no new tokens since the last run")
     window = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
     return {d: v for d, v in ledger.items() if d >= window and any(
         any(x.values()) for x in v.values())}
